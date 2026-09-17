@@ -1,0 +1,957 @@
+<!--
+  CAMUSAT TALK — application interne de prise de parole (Camusat Sénégal)
+  Voir README.md à la racine du dépôt pour le contexte complet.
+
+  ⚠️ Ce fichier a été conçu pour tourner comme "Claude Artifact" : les appels
+  window.claude.use("db" | "downloads" | "user") ne fonctionnent QUE lorsque
+  cette page est ouverte via une session Claude (elle héberge la page et lui
+  accorde ces capacités à l'exécution). Ouvert ailleurs (double-clic local,
+  GitHub Pages, un autre hébergeur...), window.claude n'existe pas : le code
+  bascule automatiquement sur des données de démonstration en mémoire
+  (voir LOCAL_FALLBACK plus bas) et les fonctions suivantes sont indisponibles :
+  enregistrement partagé des propositions, export CSV/Excel, distinction
+  propriétaire/éditeur. Détails et pistes d'évolution dans README.md.
+
+  Aucune information sensible n'est stockée dans ce fichier. La constante
+  ADMIN_CODE ci-dessous est un simple code d'accès d'interface (pas un secret
+  ni une clé API) : il est visible par quiconque lit ce fichier, comme tout
+  code présent dans une page web statique. Change-le avant toute diffusion
+  large et ne t'en sers pas comme unique protection de données sensibles.
+-->
+<title>CAMUSAT TALK</title>
+<meta name="description" content="Programme interne de prise de parole, de partage d'expérience et de développement des compétences chez Camusat Sénégal.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --navy:#203261;
+    --navy-2:#182548;
+    --navy-3:#2c4172;
+    --navy-tint:#eef1f7;
+    --red:#c8102e;
+    --red-2:#9c0c22;
+    --red-tint:#fdeaec;
+    --bg:#f6f7fa;
+    --surface:#ffffff;
+    --border:#e3e7ee;
+    --text:#1b2333;
+    --text-muted:#5b6472;
+    --text-soft:#848d9c;
+    --radius:14px;
+    --radius-sm:9px;
+    --shadow-sm:0 1px 2px rgba(23,33,63,.06);
+    --shadow-md:0 8px 24px -8px rgba(23,33,63,.18);
+    --shadow-lg:0 20px 48px -16px rgba(23,33,63,.28);
+    --st-attente-bg:#fef3c7; --st-attente-fg:#92400e; --st-attente-bd:#fbdf9a;
+    --st-validee-bg:#d9f2ef; --st-validee-fg:#0f5e59; --st-validee-bd:#a9e3db;
+    --st-prog-bg:#e6e4fb; --st-prog-fg:#3730a1; --st-prog-bd:#c9c4f5;
+    --st-real-bg:#dcfce7; --st-real-fg:#166534; --st-real-bd:#b7ecc8;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#0f1524; --surface:#161d33; --border:#2a3455; --text:#e9ecf5; --text-muted:#a8b0c3; --text-soft:#7a8398;
+      --navy-tint:#1a2340;
+      --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 8px 24px -8px rgba(0,0,0,.5); --shadow-lg:0 20px 48px -16px rgba(0,0,0,.6);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#0f1524; --surface:#161d33; --border:#2a3455; --text:#e9ecf5; --text-muted:#a8b0c3; --text-soft:#7a8398;
+    --navy-tint:#1a2340;
+    --shadow-sm:0 1px 2px rgba(0,0,0,.3); --shadow-md:0 8px 24px -8px rgba(0,0,0,.5); --shadow-lg:0 20px 48px -16px rgba(0,0,0,.6);
+  }
+  *,*::before,*::after{box-sizing:border-box}
+  body{background:var(--bg);color:var(--text);font-family:'Inter',system-ui,-apple-system,sans-serif;-webkit-font-smoothing:antialiased;padding-inline:0;}
+  h1,h2,h3,h4,.font-display{font-family:'Sora',system-ui,sans-serif;letter-spacing:-.01em;text-wrap:balance;color:var(--text)}
+  p{line-height:1.6;color:var(--text-muted)}
+  a{color:inherit}
+  button{font-family:inherit}
+  .wrap{max-width:1180px;margin-inline:auto;padding-inline:24px}
+  @media (max-width:640px){.wrap{padding-inline:16px}}
+
+  /* ---------- Nav ---------- */
+  .navbar{position:sticky;top:env(safe-area-inset-top,0px);z-index:40;background:color-mix(in srgb, var(--surface) 92%, transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--border)}
+  .nav-inner{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-block:12px;max-width:1180px;margin-inline:auto;padding-inline:24px}
+  @media (max-width:640px){.nav-inner{padding-inline:16px}}
+  .brand{display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0}
+  .brand svg{display:block}
+  .brand-word{font-family:'Sora',sans-serif;font-weight:800;font-size:16.5px;line-height:1;letter-spacing:-.01em;white-space:nowrap}
+  .brand-word b{color:var(--navy)}
+  .brand-word span{color:var(--red)}
+  @media (prefers-color-scheme: dark){ :root:not([data-theme="light"]) .brand-word b{color:#c7d3f2} }
+  :root[data-theme="dark"] .brand-word b{color:#c7d3f2}
+  .navlinks{display:flex;gap:4px;align-items:center;flex-wrap:wrap}
+  .navlink{font-size:14px;font-weight:600;color:var(--text-muted);padding:8px 14px;border-radius:999px;cursor:pointer;transition:background .15s,color .15s;white-space:nowrap}
+  .navlink:hover{background:var(--navy-tint);color:var(--navy)}
+  .navlink.active{background:var(--navy);color:#fff}
+  .nav-toggle{display:none;background:none;border:1px solid var(--border);border-radius:8px;padding:8px;cursor:pointer}
+  @media (max-width:780px){
+    .navlinks{position:fixed;inset:0 0 auto 0;top:calc(56px + env(safe-area-inset-top,0px));background:var(--surface);border-bottom:1px solid var(--border);flex-direction:column;align-items:stretch;padding:10px 16px 16px;gap:6px;display:none;box-shadow:var(--shadow-md)}
+    .navlinks.open{display:flex}
+    .navlink{width:100%;text-align:left}
+    .nav-toggle{display:inline-flex}
+  }
+
+  /* ---------- Buttons ---------- */
+  .btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;font-weight:700;font-size:14.5px;padding:12px 22px;border-radius:999px;border:1.5px solid transparent;cursor:pointer;transition:transform .12s ease,box-shadow .12s ease,background .15s,border-color .15s;text-decoration:none}
+  .btn:active{transform:translateY(1px)}
+  .btn-primary{background:var(--red);color:#fff;box-shadow:0 10px 24px -10px rgba(200,16,46,.55)}
+  .btn-primary:hover{background:var(--red-2)}
+  .btn-secondary{background:transparent;border-color:rgba(255,255,255,.55);color:#fff}
+  .btn-secondary:hover{background:rgba(255,255,255,.12)}
+  .btn-outline-navy{background:var(--surface);border-color:var(--border);color:var(--navy)}
+  .btn-outline-navy:hover{border-color:var(--navy);background:var(--navy-tint)}
+  .btn-ghost{background:transparent;border-color:transparent;color:var(--text-muted);padding:8px 14px}
+  .btn-ghost:hover{background:var(--navy-tint);color:var(--navy)}
+  .btn-sm{padding:8px 16px;font-size:13px}
+  .btn:disabled{opacity:.5;cursor:not-allowed}
+  .btn-block{width:100%}
+
+  /* ---------- Hero ---------- */
+  .hero{background:linear-gradient(180deg,var(--navy) 0%,var(--navy-2) 100%);color:#fff;position:relative;overflow:hidden}
+  .hero::after{content:"";position:absolute;inset:0;background-image:radial-gradient(circle,rgba(255,255,255,.14) 1px,transparent 1.4px);background-size:26px 26px;opacity:.35;pointer-events:none}
+  .hero-inner{position:relative;max-width:1180px;margin-inline:auto;padding:64px 24px 72px;display:grid;grid-template-columns:1.15fr .85fr;gap:48px;align-items:center}
+  @media (max-width:900px){.hero-inner{grid-template-columns:1fr;padding:44px 20px 48px;gap:36px}}
+  .eyebrow{display:inline-flex;align-items:center;gap:8px;font-size:12.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:#cfd8ef;background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.18);padding:6px 14px;border-radius:999px;margin-bottom:20px;max-width:100%;flex-wrap:wrap;white-space:normal;row-gap:2px}
+  .eyebrow .dot{width:6px;height:6px;border-radius:50%;background:var(--red)}
+  .hero h1{font-size:clamp(30px,4.4vw,46px);font-weight:800;color:#fff;line-height:1.08;margin:0 0 14px}
+  .hero .slogan{font-family:'Sora',sans-serif;font-weight:600;font-size:19px;color:#ffd8de;margin:0 0 18px}
+  .hero p.lead{color:#c6cee2;font-size:16px;max-width:52ch;margin:0 0 30px}
+  .hero-actions{display:flex;gap:14px;flex-wrap:wrap}
+  .hero-stats{display:flex;gap:28px;margin-top:38px;flex-wrap:wrap}
+  .hero-stat b{display:block;font-family:'Sora',sans-serif;font-size:26px;font-weight:800;color:#fff;font-variant-numeric:tabular-nums}
+  .hero-stat span{font-size:12.5px;color:#aab6d6;letter-spacing:.02em}
+  .hero-card{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.16);border-radius:20px;padding:26px;backdrop-filter:blur(6px)}
+  .hero-card .mini-card{background:var(--surface);border-radius:var(--radius-sm);padding:16px;color:var(--text);box-shadow:var(--shadow-lg);margin-bottom:12px}
+  .hero-card .mini-card:last-child{margin-bottom:0;transform:translateX(14px);opacity:.9}
+  .mini-card .mc-top{display:flex;justify-content:space-between;align-items:flex-start;gap:8px;margin-bottom:8px}
+  .mini-card h4{font-size:14px;margin:0;font-weight:700}
+  .mini-card p{font-size:12.5px;margin:2px 0 0;color:var(--text-soft)}
+
+  /* ---------- Sections ---------- */
+  section{padding-block:64px}
+  .section-head{max-width:640px;margin-bottom:40px}
+  .section-head .kicker{font-size:12.5px;font-weight:700;letter-spacing:.08em;text-transform:uppercase;color:var(--red);margin-bottom:8px;display:block}
+  .section-head h2{font-size:clamp(22px,3vw,30px);margin:0 0 10px}
+  .cards-3{display:grid;grid-template-columns:repeat(3,1fr);gap:20px}
+  @media (max-width:860px){.cards-3{grid-template-columns:1fr}}
+  .info-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:24px;box-shadow:var(--shadow-sm)}
+  .info-card .ic-icon{width:42px;height:42px;border-radius:11px;background:var(--navy-tint);color:var(--navy);display:flex;align-items:center;justify-content:center;margin-bottom:16px}
+  .info-card h3{font-size:16.5px;margin:0 0 8px}
+  .info-card p{font-size:14px;margin:0}
+
+  /* ---------- Cards / grid (Présentateurs) ---------- */
+  .toolbar{display:flex;gap:12px;flex-wrap:wrap;align-items:center;justify-content:space-between;margin-bottom:26px}
+  .filters{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+  select,input,textarea{font-family:inherit;font-size:14px;color:var(--text);background:var(--surface);border:1.5px solid var(--border);border-radius:var(--radius-sm);padding:10px 12px;outline:none;transition:border-color .15s,box-shadow .15s}
+  select:focus,input:focus,textarea:focus{border-color:var(--navy);box-shadow:0 0 0 3px rgba(32,50,97,.12)}
+  .field-select{min-width:190px}
+  .search-input{min-width:220px}
+  .grid-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:18px}
+  .talk-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:22px;box-shadow:var(--shadow-sm);display:flex;flex-direction:column;gap:12px;position:relative;transition:box-shadow .15s,transform .15s}
+  .talk-card:hover{box-shadow:var(--shadow-md);transform:translateY(-2px)}
+  .theme-tag{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:700;letter-spacing:.02em;color:var(--text-muted)}
+  .theme-tag .dot{width:8px;height:8px;border-radius:50%;flex-shrink:0}
+  .talk-card h3{font-size:16.5px;margin:0;line-height:1.35}
+  .talk-card .desc{font-size:13.5px;color:var(--text-muted);margin:0;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .meta-row{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--text-soft)}
+  .meta-row svg{flex-shrink:0;opacity:.7}
+  .card-foot{display:flex;align-items:center;justify-content:space-between;margin-top:auto;padding-top:12px;border-top:1px solid var(--border)}
+  .demo-badge{position:absolute;top:14px;right:14px;font-size:10px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--text-soft);background:var(--navy-tint);padding:3px 8px;border-radius:6px}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:700;padding:5px 11px;border-radius:999px;border:1px solid transparent;white-space:nowrap}
+  .pill-attente{background:var(--st-attente-bg);color:var(--st-attente-fg);border-color:var(--st-attente-bd)}
+  .pill-validee{background:var(--st-validee-bg);color:var(--st-validee-fg);border-color:var(--st-validee-bd)}
+  .pill-programmee{background:var(--st-prog-bg);color:var(--st-prog-fg);border-color:var(--st-prog-bd)}
+  .pill-realisee{background:var(--st-real-bg);color:var(--st-real-fg);border-color:var(--st-real-bd)}
+  .empty-state{text-align:center;padding:60px 20px;color:var(--text-soft)}
+  .empty-state svg{margin-bottom:14px;opacity:.5}
+
+  /* ---------- Form ---------- */
+  .form-shell{max-width:840px;margin-inline:auto}
+  .form-card{background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow-md);padding:36px}
+  @media (max-width:640px){.form-card{padding:22px}}
+  .form-section{margin-bottom:30px}
+  .form-section:last-of-type{margin-bottom:0}
+  .form-section-title{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--navy);margin-bottom:16px}
+  .form-section-title .num{width:22px;height:22px;border-radius:50%;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;font-size:11.5px}
+  .form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  @media (max-width:640px){.form-grid{grid-template-columns:1fr}}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field.full{grid-column:1/-1}
+  .field label{font-size:13px;font-weight:600;color:var(--text)}
+  .field label .req{color:var(--red)}
+  .field .hint{font-size:12px;color:var(--text-soft)}
+  .field .err{font-size:12px;color:var(--red);display:none}
+  .field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--red)}
+  .field.invalid .err{display:block}
+  textarea{resize:vertical;min-height:84px}
+  .divider{height:1px;background:var(--border);margin-block:26px}
+  .char-count{font-size:11.5px;color:var(--text-soft);text-align:right}
+
+  /* ---------- Toast ---------- */
+  #toast-root{position:fixed;top:calc(16px + env(safe-area-inset-top,0px));right:16px;z-index:200;display:flex;flex-direction:column;gap:10px;max-width:min(360px,calc(100vw - 32px))}
+  .toast{background:var(--surface);border:1px solid var(--border);border-left:4px solid var(--navy);box-shadow:var(--shadow-lg);border-radius:12px;padding:14px 16px;font-size:13.5px;display:flex;gap:10px;align-items:flex-start;animation:toast-in .2s ease}
+  .toast.error{border-left-color:var(--red)}
+  .toast b{display:block;margin-bottom:2px;font-size:13.5px}
+  @keyframes toast-in{from{opacity:0;transform:translateY(-8px)}to{opacity:1;transform:translateY(0)}}
+
+  /* ---------- Confirmation ---------- */
+  .confirm-panel{max-width:560px;margin:40px auto;text-align:center;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow-md);padding:48px 32px}
+  .confirm-icon{width:64px;height:64px;border-radius:50%;background:var(--st-real-bg);color:var(--st-real-fg);display:flex;align-items:center;justify-content:center;margin:0 auto 20px}
+  .confirm-panel h2{margin:0 0 10px;font-size:22px}
+  .confirm-panel p{margin:0 0 26px}
+  .confirm-actions{display:flex;gap:12px;justify-content:center;flex-wrap:wrap}
+
+  /* ---------- Dashboard ---------- */
+  .stat-row{display:grid;grid-template-columns:repeat(5,1fr);gap:14px;margin-bottom:28px}
+  @media (max-width:900px){.stat-row{grid-template-columns:repeat(2,1fr)}}
+  .stat-tile{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:18px}
+  .stat-tile b{display:block;font-family:'Sora',sans-serif;font-size:24px;font-weight:800;font-variant-numeric:tabular-nums}
+  .stat-tile span{font-size:12px;color:var(--text-soft)}
+  .table-wrap{overflow-x:auto;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-sm)}
+  table{width:100%;border-collapse:collapse;min-width:920px}
+  thead th{text-align:left;font-size:11.5px;font-weight:700;letter-spacing:.03em;text-transform:uppercase;color:var(--text-soft);padding:14px 16px;border-bottom:1px solid var(--border);white-space:nowrap}
+  tbody td{padding:13px 16px;border-bottom:1px solid var(--border);font-size:13.5px;vertical-align:middle}
+  tbody tr:last-child td{border-bottom:none}
+  tbody tr:hover{background:var(--navy-tint)}
+  .cell-name{font-weight:600}
+  .cell-sub{font-size:12px;color:var(--text-soft)}
+  .mini-select{font-size:12.5px;padding:6px 8px;border-radius:8px}
+  .icon-btn{background:none;border:1px solid var(--border);border-radius:8px;padding:6px 8px;cursor:pointer;color:var(--text-muted)}
+  .icon-btn:hover{background:var(--navy-tint);color:var(--navy)}
+
+  /* ---------- Gate (admin passcode) ---------- */
+  .gate-wrap{max-width:420px;margin:60px auto;background:var(--surface);border:1px solid var(--border);border-radius:20px;box-shadow:var(--shadow-md);padding:36px;text-align:center}
+  .gate-wrap .gicon{width:52px;height:52px;border-radius:14px;background:var(--navy);color:#fff;display:flex;align-items:center;justify-content:center;margin:0 auto 18px}
+  .gate-wrap h2{font-size:19px;margin:0 0 8px}
+  .gate-wrap p{font-size:13.5px;margin:0 0 20px}
+  .gate-form{display:flex;gap:8px}
+  .gate-form input{flex:1}
+
+  /* ---------- Footer ---------- */
+  footer{border-top:1px solid var(--border);padding-block:28px;margin-top:20px}
+  .foot-inner{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;font-size:12.5px;color:var(--text-soft)}
+  .badge-camusat{display:inline-flex;align-items:center;gap:8px}
+  .badge-camusat .sq{width:22px;height:22px;border-radius:6px;background:var(--navy);color:#fff;font-family:'Sora',sans-serif;font-weight:800;font-size:11px;display:flex;align-items:center;justify-content:center}
+
+  [hidden]{display:none!important}
+  .sr-only{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0)}
+</style>
+
+<div id="toast-root" aria-live="polite"></div>
+
+<nav class="navbar">
+  <div class="nav-inner">
+    <div class="brand" data-nav="#/">
+      <svg width="34" height="34" viewBox="0 0 34 34" fill="none">
+        <rect width="34" height="34" rx="10" fill="#203261"/>
+        <path d="M8 12.5C8 10.567 9.567 9 11.5 9H22.5C24.433 9 26 10.567 26 12.5V17.5C26 19.433 24.433 21 22.5 21H15L10.5 24.5V21H11.5C9.567 21 8 19.433 8 17.5V12.5Z" fill="white"/>
+        <circle cx="13" cy="15" r="1.4" fill="#203261"/>
+        <circle cx="17" cy="15" r="1.4" fill="#c8102e"/>
+        <circle cx="21" cy="15" r="1.4" fill="#203261"/>
+      </svg>
+      <span class="brand-word"><b>CAMUSAT</b> <span>TALK</span></span>
+    </div>
+    <button class="nav-toggle" id="navToggle" aria-label="Menu">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M3 12h18M3 18h18" stroke-linecap="round"/></svg>
+    </button>
+    <div class="navlinks" id="navLinks">
+      <div class="navlink" data-nav="#/">Accueil</div>
+      <div class="navlink" data-nav="#/proposer">Proposer un sujet</div>
+      <div class="navlink" data-nav="#/presentateurs">Présentateurs</div>
+      <div class="navlink" data-nav="#/dashboard">Dashboard</div>
+    </div>
+  </div>
+</nav>
+
+<main id="view"></main>
+
+<footer>
+  <div class="wrap foot-inner">
+    <div class="badge-camusat"><span class="sq">CS</span> Camusat Sénégal — Bureau d'Études</div>
+    <div>CAMUSAT TALK · Share. Learn. Inspire.</div>
+  </div>
+</footer>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ============================= CONFIG ============================= */
+  var THEMES = [
+    {id:"leadership", label:"Leadership & Management", color:"#203261"},
+    {id:"technique", label:"Technique & Expertise", color:"#2b6cb0"},
+    {id:"devperso", label:"Développement personnel", color:"#6b46c1"},
+    {id:"innovation", label:"Innovation & Digital", color:"#0d9488"},
+    {id:"communication", label:"Communication", color:"#c8102e"},
+    {id:"sante", label:"Santé & Bien-être", color:"#16a34a"},
+    {id:"autre", label:"Autre", color:"#6b7280"}
+  ];
+  var STATUSES = [
+    {id:"attente", label:"En attente", pill:"pill-attente"},
+    {id:"validee", label:"Validée", pill:"pill-validee"},
+    {id:"programmee", label:"Présentation programmée", pill:"pill-programmee"},
+    {id:"realisee", label:"Présentation réalisée", pill:"pill-realisee"}
+  ];
+  var DURATIONS = ["15 minutes","20 minutes","30 minutes","45 minutes","1 heure","Autre (à préciser)"];
+  // Code d'accès du Dashboard : une commodité d'interface, pas un secret (visible en clair
+  // dans ce fichier). Change cette valeur avant toute diffusion large de l'application.
+  // Le vrai contrôle d'accès reste les droits de partage de l'Artifact (voir README.md).
+  var ADMIN_CODE = "CAMUSAT2026";
+
+  function themeById(id){ return THEMES.find(function(t){return t.id===id}) || THEMES[THEMES.length-1]; }
+  function statusById(id){ return STATUSES.find(function(s){return s.id===id}) || STATUSES[0]; }
+  function esc(s){ return (s==null?"":String(s)).replace(/[&<>"']/g, function(c){return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]; }); }
+  function fmtDate(iso){
+    if(!iso) return "—";
+    try{
+      var d = new Date(iso+"T00:00:00");
+      return d.toLocaleDateString("fr-FR",{day:"2-digit",month:"short",year:"numeric"});
+    }catch(e){ return iso; }
+  }
+  function uid(){ return "p_" + Date.now().toString(36) + Math.random().toString(36).slice(2,8); }
+
+  /* ============================= ICONS ============================= */
+  var ICONS = {
+    calendar:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4" stroke-linecap="round"/></svg>',
+    clock:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2" stroke-linecap="round"/></svg>',
+    mentor:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="8" r="3.2"/><path d="M5 20c1.2-4 4-6 7-6s5.8 2 7 6" stroke-linecap="round"/></svg>',
+    check:'<svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M20 6L9 17l-5-5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    search:'<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3" stroke-linecap="round"/></svg>',
+    empty:'<svg width="44" height="44" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M4 6h16M4 12h10M4 18h7"/></svg>',
+    lock:'<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="10" width="16" height="10" rx="2"/><path d="M8 10V7a4 4 0 018 0v3"/></svg>',
+    download:'<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0l-4-4m4 4l4-4M4 19h16" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    users:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="3"/><path d="M2 20c1-3.5 3.5-5.5 7-5.5S15 16.5 16 20"/><circle cx="17.5" cy="9" r="2.3"/><path d="M17 13.2c2.2.3 3.7 1.8 4.3 4"/></svg>',
+    layers:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 5-9 5-9-5 9-5z"/><path d="M3 13l9 5 9-5" stroke-linecap="round" stroke-linejoin="round"/></svg>',
+    target:'<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="4.5"/><circle cx="12" cy="12" r="0.6" fill="currentColor"/></svg>'
+  };
+
+  /* ============================= STATE ============================= */
+  var state = {
+    db: null,
+    downloads: null,
+    userCap: null,
+    canEdit: false,
+    isOwner: false,
+    dbAvailable: false,
+    items: [],
+    unsub: null,
+    adminUnlocked: false,
+    filters: { theme: "", status: "", q: "" },
+    lastSubmitted: null
+  };
+
+  /* local fallback demo data (used only if the shared db capability is unavailable in this view) */
+  var LOCAL_FALLBACK = buildDemoDocs();
+
+  function buildDemoDocs(){
+    var base = Date.now();
+    var rows = [
+      ["Fatou Ndiaye","Cheffe de Projet — Bureau d'Études","Piloter un projet télécom sans perdre son équipe en route","leadership","Ibrahima Sarr","Direction des Opérations","Partager des méthodes concrètes de priorisation et de communication d'équipe","30 minutes","validee",12],
+      ["Moussa Diallo","Ingénieur Génie Civil — Fondations","Dimensionnement rapide des fondations pylônes en sol sableux","technique","Astou Kassé","Bureau d'Études","Transmettre une méthode de pré-dimensionnement utilisable sur le terrain","45 minutes","programmee",9],
+      ["Aïssatou Ba","Chargée RH","Mieux gérer son énergie plutôt que son temps","devperso","Khady Fall","Ressources Humaines","Donner des outils simples contre la surcharge mentale","20 minutes","attente",5],
+      ["Cheikh Gueye","Responsable IT","L'IA générative au service des études techniques","innovation","Fatou Ndiaye","Bureau d'Études","Montrer 3 cas d'usage concrets testés en interne","30 minutes","realisee",21],
+      ["Marième Sow","Chargée de Communication","Raconter un projet pour convaincre en 3 minutes","communication","Moussa Diallo","Bureau d'Études","Structurer un pitch clair pour un client ou la Direction","15 minutes","validee",8],
+      ["Ousmane Faye","Superviseur HSE","Prévenir les troubles musculo-squelettiques sur chantier","sante","Aïssatou Ba","QHSE","Sensibiliser aux bons gestes et postures sur site","20 minutes","programmee",6],
+      ["Ndèye Diop","Ingénieure Structures","Retour d'expérience : pylône haubané 150m","technique","Cheikh Gueye","Bureau d'Études","Partager les leçons apprises d'un chantier complexe","45 minutes","attente",3],
+      ["Abdou Karim Sy","Chargé d'Affaires","Négocier sans braquer le client","communication","Marième Sow","Commercial","Donner des repères simples pour des échanges gagnant-gagnant","30 minutes","realisee",14]
+    ];
+    return rows.map(function(r,i){
+      var d = new Date(base - i*86400000*2);
+      var due = new Date(base + (i+2)*86400000*4);
+      return {
+        id:"demo_"+i,
+        presenterName:r[0], presenterRole:r[1], presenterEmail:r[0].toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z]+/g,".")+"@camusat.com",
+        title:r[2], description:"Session d'échange autour de « "+r[2]+" », ouverte à toutes les équipes de Camusat Sénégal.",
+        theme:r[3], mentorName:r[4], mentorDept:r[5], objective:r[6], duration:r[7],
+        desiredDate: due.toISOString().slice(0,10), status:r[8],
+        createdAt: d.toISOString(), demo:true, votes:r[9]
+      };
+    });
+  }
+
+  /* ============================= TOASTS ============================= */
+  function toast(title, body, isError){
+    var root = document.getElementById("toast-root");
+    var el = document.createElement("div");
+    el.className = "toast" + (isError ? " error" : "");
+    el.innerHTML = '<div style="margin-top:2px">'+(isError?'⚠':'✓')+'</div><div><b>'+esc(title)+'</b>'+(body?'<div style="color:var(--text-muted)">'+esc(body)+'</div>':'')+'</div>';
+    root.appendChild(el);
+    setTimeout(function(){ el.style.transition="opacity .25s,transform .25s"; el.style.opacity="0"; el.style.transform="translateY(-6px)"; setTimeout(function(){ el.remove(); }, 260); }, 4200);
+  }
+
+  /* ============================= DB LAYER ============================= */
+  function itemsSorted(){
+    var arr = state.items.slice();
+    arr.sort(function(a,b){ return (b.createdAt||"").localeCompare(a.createdAt||""); });
+    return arr;
+  }
+
+  function initDb(){
+    if(!window.claude || typeof window.claude.use !== "function"){
+      state.items = LOCAL_FALLBACK; render(); return;
+    }
+    Promise.all([window.claude.use("db"), window.claude.use("downloads"), window.claude.use("user")]).then(function(res){
+      state.db = res[0]; state.downloads = res[1]; state.userCap = res[2];
+      if(!state.db){ state.items = LOCAL_FALLBACK; render(); return; }
+      state.dbAvailable = true;
+      if(state.userCap){
+        Promise.all([state.userCap.canEdit(), state.userCap.isOwner()]).then(function(r){
+          state.canEdit = r[0]; state.isOwner = r[1];
+          if(state.canEdit || state.isOwner){ state.adminUnlocked = true; }
+          render();
+        }).catch(function(){});
+      }
+      var col = state.db.collection("propositions");
+      state.unsub = col.onSnapshot(function(snap){
+        state.items = snap.docs.map(function(d){ var v = d.data()||{}; v.id = d.id; return v; });
+        render();
+      }, function(err){
+        console.warn("db onSnapshot error", err);
+        if(!state.items.length){ state.items = LOCAL_FALLBACK; }
+        render();
+      });
+    }).catch(function(){ state.items = LOCAL_FALLBACK; render(); });
+  }
+
+  function createProposition(data, cb){
+    data.status = "attente";
+    data.createdAt = new Date().toISOString();
+    if(state.dbAvailable && state.db){
+      state.db.collection("propositions").add(data).then(function(){ cb(true); })
+        .catch(function(e){ console.warn(e); cb(false, e); });
+    } else {
+      data.id = uid();
+      LOCAL_FALLBACK.unshift(data);
+      state.items = LOCAL_FALLBACK;
+      cb(true);
+    }
+  }
+
+  function updateProposition(id, patch){
+    if(state.dbAvailable && state.db){
+      state.db.collection("propositions").doc(id).update(patch).catch(function(e){
+        toast("Modification impossible", (e && e.message) || "Réessayez dans un instant.", true);
+      });
+    } else {
+      var it = LOCAL_FALLBACK.find(function(x){ return x.id===id; });
+      if(it){ Object.assign(it, patch); state.items = LOCAL_FALLBACK; render(); }
+    }
+  }
+
+  /* ============================= ROUTER ============================= */
+  function currentRoute(){
+    var h = location.hash || "#/";
+    if(h.indexOf("#/proposer")===0) return "proposer";
+    if(h.indexOf("#/presentateurs")===0) return "presentateurs";
+    if(h.indexOf("#/dashboard")===0) return "dashboard";
+    return "accueil";
+  }
+  function navTo(hash){ location.hash = hash; }
+
+  function updateActiveNav(){
+    var route = currentRoute();
+    var map = {accueil:"#/", proposer:"#/proposer", presentateurs:"#/presentateurs", dashboard:"#/dashboard"};
+    document.querySelectorAll(".navlink").forEach(function(el){
+      el.classList.toggle("active", el.getAttribute("data-nav")===map[route]);
+    });
+    document.getElementById("navLinks").classList.remove("open");
+  }
+
+  window.addEventListener("hashchange", render);
+  document.addEventListener("click", function(e){
+    var t = e.target.closest("[data-nav]");
+    if(t){ navTo(t.getAttribute("data-nav")); }
+  });
+  document.getElementById("navToggle").addEventListener("click", function(){
+    document.getElementById("navLinks").classList.toggle("open");
+  });
+
+  /* ============================= RENDER: ROOT ============================= */
+  function render(){
+    updateActiveNav();
+    var route = currentRoute();
+    var view = document.getElementById("view");
+    if(route==="accueil") view.innerHTML = renderHome();
+    else if(route==="proposer") view.innerHTML = renderProposer();
+    else if(route==="presentateurs") view.innerHTML = renderPresentateurs();
+    else if(route==="dashboard") view.innerHTML = renderDashboard();
+    window.scrollTo({top:0, behavior:"instant" in window ? "instant" : "auto"});
+    bindRouteEvents(route);
+  }
+
+  /* ============================= HOME ============================= */
+  function renderHome(){
+    var total = state.items.length;
+    var themesUsed = new Set(state.items.map(function(i){return i.theme})).size;
+    var mentors = new Set(state.items.map(function(i){return i.mentorName}).filter(Boolean)).size;
+    var top3 = itemsSorted().slice(0,2);
+
+    return ''+
+    '<div class="hero">'+
+      '<div class="hero-inner">'+
+        '<div>'+
+          '<span class="eyebrow"><span class="dot"></span> Programme interne Camusat Sénégal</span>'+
+          '<h1>Prenez la parole. Partagez votre expertise.</h1>'+
+          '<p class="slogan">Share. Learn. Inspire.</p>'+
+          '<p class="lead">CAMUSAT TALK est l\'espace où les collaborateurs proposent et présentent un sujet — technique, humain ou stratégique — accompagnés d\'un mentor, devant leurs collègues.</p>'+
+          '<div class="hero-actions">'+
+            '<button class="btn btn-primary" data-nav="#/proposer">Proposer un sujet</button>'+
+            '<button class="btn btn-secondary" data-nav="#/presentateurs">Voir les présentations</button>'+
+          '</div>'+
+          '<div class="hero-stats">'+
+            '<div class="hero-stat"><b>'+total+'</b><span>Sujets proposés</span></div>'+
+            '<div class="hero-stat"><b>'+themesUsed+'</b><span>Thématiques actives</span></div>'+
+            '<div class="hero-stat"><b>'+mentors+'</b><span>Mentors impliqués</span></div>'+
+          '</div>'+
+        '</div>'+
+        '<div class="hero-card">'+
+          top3.map(function(it){
+            var th = themeById(it.theme);
+            return '<div class="mini-card"><div class="mc-top"><span class="theme-tag"><span class="dot" style="background:'+th.color+'"></span>'+esc(th.label)+'</span>'+statusPill(it.status)+'</div><h4>'+esc(it.title)+'</h4><p>'+esc(it.presenterName)+' · mentor '+esc(it.mentorName||'—')+'</p></div>';
+          }).join("") +
+          (top3.length===0 ? '<div class="mini-card"><h4>Votre sujet apparaîtra ici</h4><p>Soyez le premier à proposer un TALK</p></div>' : '') +
+        '</div>'+
+      '</div>'+
+    '</div>'+
+
+    '<section class="wrap">'+
+      '<div class="section-head">'+
+        '<span class="kicker">Comment ça marche</span>'+
+        '<h2>Une plateforme simple, pensée pour les équipes terrain</h2>'+
+        '<p>Renseignez votre intervention en moins de deux minutes : votre équipe RH et la Direction suivent ensuite chaque proposition jusqu\'à la présentation.</p>'+
+      '</div>'+
+      '<div class="cards-3">'+
+        '<div class="info-card"><div class="ic-icon">'+ICONS.layers+'</div><h3>1. Proposez votre sujet</h3><p>Titre, thématique, objectif et mentor accompagnateur : un formulaire court et guidé.</p></div>'+
+        '<div class="info-card"><div class="ic-icon">'+ICONS.mentor+'</div><h3>2. Un mentor vous accompagne</h3><p>Chaque intervenant est épaulé par un mentor d\'un autre département pour préparer sa présentation.</p></div>'+
+        '<div class="info-card"><div class="ic-icon">'+ICONS.users+'</div><h3>3. Vous présentez à vos pairs</h3><p>La proposition est validée, programmée, puis présentée devant les équipes Camusat Sénégal.</p></div>'+
+      '</div>'+
+    '</section>'+
+    '<section class="wrap" style="padding-top:0">'+
+      '<div style="background:var(--navy-tint);border-radius:20px;padding:36px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap">'+
+        '<div><h3 style="margin:0 0 6px;font-size:19px">Une idée à partager ?</h3><p style="margin:0">Rejoignez les collaborateurs qui font déjà vivre CAMUSAT TALK.</p></div>'+
+        '<button class="btn btn-outline-navy" style="border-color:var(--navy)" data-nav="#/proposer">Proposer un sujet</button>'+
+      '</div>'+
+    '</section>';
+  }
+
+  function statusPill(id){
+    var s = statusById(id);
+    return '<span class="pill '+s.pill+'">'+esc(s.label)+'</span>';
+  }
+
+  /* ============================= PROPOSER (form) ============================= */
+  function renderProposer(){
+    if(state.lastSubmitted){
+      var it = state.lastSubmitted;
+      return '<section class="wrap"><div class="confirm-panel">'+
+        '<div class="confirm-icon">'+ICONS.check+'</div>'+
+        '<h2>Merci ! Votre proposition CAMUSAT TALK a bien été enregistrée.</h2>'+
+        '<p>« '+esc(it.title)+' » a été transmise à l\'équipe RH avec le statut <b>En attente</b>. Vous serez recontacté·e par votre mentor, '+esc(it.mentorName)+'.</p>'+
+        '<div class="confirm-actions">'+
+          '<button class="btn btn-primary" id="btnAnotherProposal">Proposer un autre sujet</button>'+
+          '<button class="btn btn-outline-navy" data-nav="#/presentateurs">Voir les présentations</button>'+
+        '</div>'+
+      '</div></section>';
+    }
+
+    var themeOptions = THEMES.map(function(t){ return '<option value="'+t.id+'">'+esc(t.label)+'</option>'; }).join("");
+    var durationOptions = DURATIONS.map(function(d){ return '<option value="'+esc(d)+'">'+esc(d)+'</option>'; }).join("");
+    var today = new Date().toISOString().slice(0,10);
+
+    return '<section class="wrap"><div class="form-shell">'+
+      '<div class="section-head" style="margin-bottom:26px">'+
+        '<span class="kicker">Proposer un sujet</span>'+
+        '<h2>Votre intervention CAMUSAT TALK</h2>'+
+        '<p>Comptez environ 2 minutes. Les champs marqués <span style="color:var(--red)">*</span> sont obligatoires.</p>'+
+      '</div>'+
+      '<form id="talkForm" class="form-card" novalidate>'+
+
+        '<div class="form-section">'+
+          '<div class="form-section-title"><span class="num">1</span> Vos informations</div>'+
+          '<div class="form-grid">'+
+            field("presenterName","Nom et prénom du présentateur","text",true)+
+            field("presenterRole","Poste / Département","text",true)+
+            field("presenterEmail","Adresse e-mail professionnelle","email",true,"full")+
+          '</div>'+
+        '</div>'+
+
+        '<div class="divider"></div>'+
+        '<div class="form-section">'+
+          '<div class="form-section-title"><span class="num">2</span> Votre sujet</div>'+
+          '<div class="form-grid">'+
+            field("title","Titre du sujet à présenter","text",true,"full")+
+            '<div class="field full">'+
+              '<label for="description">Description courte du sujet <span class="req">*</span></label>'+
+              '<textarea id="description" name="description" maxlength="400" placeholder="En quelques phrases, de quoi allez-vous parler ?"></textarea>'+
+              '<div class="char-count"><span id="descCount">0</span>/400</div>'+
+              '<div class="err">Merci d\'ajouter une courte description.</div>'+
+            '</div>'+
+            '<div class="field full">'+
+              '<label for="theme">Thématique du sujet <span class="req">*</span></label>'+
+              '<select id="theme" name="theme"><option value="">Sélectionner une thématique…</option>'+themeOptions+'</select>'+
+              '<div class="err">Merci de choisir une thématique.</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+
+        '<div class="divider"></div>'+
+        '<div class="form-section">'+
+          '<div class="form-section-title"><span class="num">3</span> Accompagnement mentor</div>'+
+          '<div class="form-grid">'+
+            field("mentorName","Nom du mentor accompagnateur","text",true)+
+            field("mentorDept","Département du mentor","text",true)+
+            '<div class="field full">'+
+              '<label for="objective">Objectif de la présentation <span class="req">*</span></label>'+
+              '<textarea id="objective" name="objective" placeholder="Que doivent retenir ou savoir faire les participants à la fin ?"></textarea>'+
+              '<div class="err">Merci de préciser l\'objectif.</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+
+        '<div class="divider"></div>'+
+        '<div class="form-section">'+
+          '<div class="form-section-title"><span class="num">4</span> Logistique</div>'+
+          '<div class="form-grid">'+
+            '<div class="field">'+
+              '<label for="duration">Durée estimée de l\'intervention <span class="req">*</span></label>'+
+              '<select id="duration" name="duration"><option value="">Sélectionner…</option>'+durationOptions+'</select>'+
+              '<div class="err">Merci d\'estimer une durée.</div>'+
+            '</div>'+
+            '<div class="field">'+
+              '<label for="desiredDate">Date souhaitée de présentation <span class="req">*</span></label>'+
+              '<input type="date" id="desiredDate" name="desiredDate" min="'+today+'">'+
+              '<div class="err">Merci de choisir une date à venir.</div>'+
+            '</div>'+
+          '</div>'+
+        '</div>'+
+
+        '<div class="divider"></div>'+
+        '<button type="submit" class="btn btn-primary btn-block" id="submitBtn">Enregistrer ma proposition</button>'+
+      '</form>'+
+    '</div></section>';
+  }
+
+  function field(id,label,type,required,extraClass){
+    return '<div class="field'+(extraClass?" "+extraClass:"")+'">'+
+      '<label for="'+id+'">'+esc(label)+(required?' <span class="req">*</span>':'')+'</label>'+
+      '<input type="'+type+'" id="'+id+'" name="'+id+'" autocomplete="off">'+
+      '<div class="err">Ce champ est requis.</div>'+
+    '</div>';
+  }
+
+  function bindProposerForm(){
+    var form = document.getElementById("talkForm");
+    if(!form) return;
+
+    var desc = document.getElementById("description");
+    var descCount = document.getElementById("descCount");
+    if(desc){ desc.addEventListener("input", function(){ descCount.textContent = desc.value.length; }); }
+
+    form.addEventListener("submit", function(e){
+      e.preventDefault();
+      var required = ["presenterName","presenterRole","presenterEmail","title","description","theme","mentorName","mentorDept","objective","duration","desiredDate"];
+      var ok = true;
+      var values = {};
+      required.forEach(function(name){
+        var el = document.getElementById(name);
+        var fieldWrap = el.closest(".field");
+        var val = el.value.trim();
+        values[name] = val;
+        var valid = val.length>0;
+        if(name==="presenterEmail" && val){ valid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val); }
+        if(name==="desiredDate" && val){ valid = val >= new Date().toISOString().slice(0,10); }
+        fieldWrap.classList.toggle("invalid", !valid);
+        if(!valid) ok = false;
+      });
+      if(!ok){
+        toast("Formulaire incomplet", "Merci de vérifier les champs en rouge.", true);
+        var firstInvalid = form.querySelector(".field.invalid input, .field.invalid select, .field.invalid textarea");
+        if(firstInvalid) firstInvalid.focus();
+        return;
+      }
+      var submitBtn = document.getElementById("submitBtn");
+      submitBtn.disabled = true; submitBtn.textContent = "Enregistrement…";
+      createProposition(values, function(success, err){
+        submitBtn.disabled = false; submitBtn.textContent = "Enregistrer ma proposition";
+        if(success){
+          state.lastSubmitted = values;
+          toast("Proposition enregistrée", values.title);
+          render();
+        } else {
+          toast("Erreur d'enregistrement", (err && err.message) || "Merci de réessayer.", true);
+        }
+      });
+    });
+
+    var another = document.getElementById("btnAnotherProposal");
+    if(another){ another.addEventListener("click", function(){ state.lastSubmitted = null; render(); }); }
+  }
+
+  /* ============================= PRÉSENTATEURS ============================= */
+  function renderPresentateurs(){
+    var themeOptions = THEMES.map(function(t){ return '<option value="'+t.id+'">'+esc(t.label)+'</option>'; }).join("");
+    var statusOptions = STATUSES.map(function(s){ return '<option value="'+s.id+'">'+esc(s.label)+'</option>'; }).join("");
+
+    var filtered = itemsSorted().filter(applyFilters);
+
+    return '<section class="wrap">'+
+      '<div class="section-head">'+
+        '<span class="kicker">Communauté</span>'+
+        '<h2>Les présentateurs CAMUSAT TALK</h2>'+
+        '<p>Parcourez les sujets proposés par vos collègues et suivez l\'avancement de chaque présentation.</p>'+
+      '</div>'+
+      '<div class="toolbar">'+
+        '<div class="filters">'+
+          '<select class="field-select" id="filterTheme"><option value="">Toutes les thématiques</option>'+themeOptions+'</select>'+
+          '<select class="field-select" id="filterStatus"><option value="">Tous les statuts</option>'+statusOptions+'</select>'+
+          '<input class="search-input" id="filterSearch" type="search" placeholder="Rechercher un sujet, un présentateur…">'+
+        '</div>'+
+        '<div style="color:var(--text-soft);font-size:13px">'+filtered.length+' sujet(s)</div>'+
+      '</div>'+
+      '<div id="cardsGrid">'+ (filtered.length ? renderCardsGrid(filtered) : renderEmptyState()) +'</div>'+
+    '</section>';
+  }
+
+  function applyFilters(it){
+    if(state.filters.theme && it.theme !== state.filters.theme) return false;
+    if(state.filters.status && it.status !== state.filters.status) return false;
+    if(state.filters.q){
+      var q = state.filters.q.toLowerCase();
+      var hay = [it.title,it.presenterName,it.mentorName,it.description].join(" ").toLowerCase();
+      if(hay.indexOf(q)===-1) return false;
+    }
+    return true;
+  }
+
+  function renderEmptyState(){
+    return '<div class="empty-state">'+ICONS.empty+'<div>Aucun sujet ne correspond à ces filtres pour le moment.</div></div>';
+  }
+
+  function renderCardsGrid(list){
+    return '<div class="grid-cards">' + list.map(function(it){
+      var th = themeById(it.theme);
+      return '<div class="talk-card">'+
+        (it.demo ? '<span class="demo-badge">Exemple</span>' : '')+
+        '<span class="theme-tag"><span class="dot" style="background:'+th.color+'"></span>'+esc(th.label)+'</span>'+
+        '<h3>'+esc(it.title)+'</h3>'+
+        '<p class="desc">'+esc(it.description||"")+'</p>'+
+        '<div class="meta-row">'+ICONS.mentor+' Mentor : '+esc(it.mentorName||"—")+'</div>'+
+        '<div class="meta-row">'+ICONS.calendar+' '+fmtDate(it.desiredDate)+' · '+ICONS.clock+' '+esc(it.duration||"—")+'</div>'+
+        '<div class="card-foot"><span style="font-size:13px;font-weight:600">'+esc(it.presenterName)+'</span>'+statusPill(it.status)+'</div>'+
+      '</div>';
+    }).join("") + '</div>';
+  }
+
+  function bindPresentateursEvents(){
+    var ft = document.getElementById("filterTheme");
+    var fs = document.getElementById("filterStatus");
+    var fq = document.getElementById("filterSearch");
+    if(ft) ft.value = state.filters.theme;
+    if(fs) fs.value = state.filters.status;
+    if(fq) fq.value = state.filters.q;
+    function refresh(){
+      var filtered = itemsSorted().filter(applyFilters);
+      document.getElementById("cardsGrid").innerHTML = filtered.length ? renderCardsGrid(filtered) : renderEmptyState();
+      var counter = document.querySelector(".toolbar > div:last-child");
+      if(counter) counter.textContent = filtered.length + " sujet(s)";
+    }
+    if(ft) ft.addEventListener("change", function(){ state.filters.theme = ft.value; refresh(); });
+    if(fs) fs.addEventListener("change", function(){ state.filters.status = fs.value; refresh(); });
+    if(fq) fq.addEventListener("input", function(){ state.filters.q = fq.value; refresh(); });
+  }
+
+  /* ============================= DASHBOARD ============================= */
+  function renderDashboard(){
+    if(!state.adminUnlocked){
+      return '<section class="wrap"><div class="gate-wrap">'+
+        '<div class="gicon">'+ICONS.lock+'</div>'+
+        '<h2>Espace administrateur</h2>'+
+        '<p>Réservé à l\'équipe RH / Direction. Saisissez le code d\'accès pour continuer.</p>'+
+        '<form class="gate-form" id="gateForm">'+
+          '<input type="password" id="gateCode" placeholder="Code d\'accès" autocomplete="off">'+
+          '<button class="btn btn-primary" type="submit">Entrer</button>'+
+        '</form>'+
+      '</div></section>';
+    }
+
+    var total = state.items.length;
+    var counts = {};
+    STATUSES.forEach(function(s){ counts[s.id] = 0; });
+    state.items.forEach(function(it){ if(counts[it.status]!==undefined) counts[it.status]++; });
+
+    var themeOptions = THEMES.map(function(t){ return '<option value="'+t.id+'">'+esc(t.label)+'</option>'; }).join("");
+    var list = itemsSorted().filter(function(it){ return !state.filters.dashTheme || it.theme===state.filters.dashTheme; });
+
+    return '<section class="wrap">'+
+      '<div class="toolbar" style="margin-bottom:22px">'+
+        '<div class="section-head" style="margin:0">'+
+          '<span class="kicker">Administration</span>'+
+          '<h2 style="margin-bottom:0">Tableau de bord</h2>'+
+        '</div>'+
+        '<div style="display:flex;gap:10px;flex-wrap:wrap">'+
+          '<button class="btn btn-outline-navy btn-sm" id="btnExportCsv">'+ICONS.download+' Export CSV</button>'+
+          '<button class="btn btn-outline-navy btn-sm" id="btnExportXlsx">'+ICONS.download+' Export Excel</button>'+
+        '</div>'+
+      '</div>'+
+      '<div class="stat-row">'+
+        '<div class="stat-tile"><b>'+total+'</b><span>Total propositions</span></div>'+
+        '<div class="stat-tile"><b style="color:var(--st-attente-fg)">'+counts.attente+'</b><span>En attente</span></div>'+
+        '<div class="stat-tile"><b style="color:var(--st-validee-fg)">'+counts.validee+'</b><span>Validées</span></div>'+
+        '<div class="stat-tile"><b style="color:var(--st-prog-fg)">'+counts.programmee+'</b><span>Programmées</span></div>'+
+        '<div class="stat-tile"><b style="color:var(--st-real-fg)">'+counts.realisee+'</b><span>Réalisées</span></div>'+
+      '</div>'+
+      '<div class="toolbar">'+
+        '<div class="filters">'+
+          '<select class="field-select" id="dashThemeFilter"><option value="">Toutes les thématiques</option>'+themeOptions+'</select>'+
+        '</div>'+
+        (state.items.some(function(i){return i.demo}) ? '<div style="font-size:12.5px;color:var(--text-soft)">Contient des données de démonstration</div>' : '')+
+      '</div>'+
+      '<div class="table-wrap">'+
+        '<table><thead><tr>'+
+          '<th>Présentateur</th><th>Sujet</th><th>Thématique</th><th>Mentor</th><th>Date souhaitée</th><th>Statut</th><th></th>'+
+        '</tr></thead><tbody id="dashBody">'+ renderDashRows(list) +'</tbody></table>'+
+      '</div>'+
+    '</section>';
+  }
+
+  function renderDashRows(list){
+    if(!list.length){ return '<tr><td colspan="7" style="text-align:center;color:var(--text-soft);padding:40px 16px">Aucune proposition pour ce filtre.</td></tr>'; }
+    return list.map(function(it){
+      var th = themeById(it.theme);
+      var statusOpts = STATUSES.map(function(s){ return '<option value="'+s.id+'"'+(s.id===it.status?" selected":"")+'>'+esc(s.label)+'</option>'; }).join("");
+      return '<tr data-id="'+esc(it.id)+'">'+
+        '<td><div class="cell-name">'+esc(it.presenterName)+'</div><div class="cell-sub">'+esc(it.presenterRole||"")+'</div></td>'+
+        '<td>'+esc(it.title)+'</td>'+
+        '<td><span class="theme-tag"><span class="dot" style="background:'+th.color+'"></span>'+esc(th.label)+'</span></td>'+
+        '<td><input class="mentor-input" data-id="'+esc(it.id)+'" value="'+esc(it.mentorName||"")+'" style="width:140px;padding:6px 8px;font-size:12.5px"></td>'+
+        '<td class="cell-sub">'+fmtDate(it.desiredDate)+'</td>'+
+        '<td><select class="mini-select status-select" data-id="'+esc(it.id)+'">'+statusOpts+'</select></td>'+
+        '<td></td>'+
+      '</tr>';
+    }).join("");
+  }
+
+  function bindDashboardEvents(){
+    var gateForm = document.getElementById("gateForm");
+    if(gateForm){
+      gateForm.addEventListener("submit", function(e){
+        e.preventDefault();
+        var code = document.getElementById("gateCode").value.trim();
+        if(code === ADMIN_CODE){
+          state.adminUnlocked = true;
+          try{ sessionStorage.setItem("ct_admin_ok","1"); }catch(err){}
+          render();
+        } else {
+          toast("Code incorrect", "Vérifiez le code d'accès auprès de l'équipe RH.", true);
+        }
+      });
+      return;
+    }
+
+    var dt = document.getElementById("dashThemeFilter");
+    if(dt){
+      dt.value = state.filters.dashTheme || "";
+      dt.addEventListener("change", function(){
+        state.filters.dashTheme = dt.value;
+        var list = itemsSorted().filter(function(it){ return !state.filters.dashTheme || it.theme===state.filters.dashTheme; });
+        document.getElementById("dashBody").innerHTML = renderDashRows(list);
+        bindTableRowEvents();
+      });
+    }
+    bindTableRowEvents();
+
+    var csvBtn = document.getElementById("btnExportCsv");
+    if(csvBtn) csvBtn.addEventListener("click", exportCsv);
+    var xlsxBtn = document.getElementById("btnExportXlsx");
+    if(xlsxBtn) xlsxBtn.addEventListener("click", exportXlsx);
+  }
+
+  function bindTableRowEvents(){
+    document.querySelectorAll(".status-select").forEach(function(sel){
+      sel.addEventListener("change", function(){
+        updateProposition(sel.getAttribute("data-id"), {status: sel.value});
+        toast("Statut mis à jour", statusById(sel.value).label);
+      });
+    });
+    document.querySelectorAll(".mentor-input").forEach(function(inp){
+      inp.addEventListener("change", function(){
+        updateProposition(inp.getAttribute("data-id"), {mentorName: inp.value.trim()});
+        toast("Mentor mis à jour", inp.value.trim());
+      });
+    });
+  }
+
+  /* ---------- exports ---------- */
+  function exportRows(){
+    return itemsSorted().map(function(it){
+      return {
+        "Presentateur": it.presenterName||"", "Poste/Departement": it.presenterRole||"", "Email": it.presenterEmail||"",
+        "Titre": it.title||"", "Description": it.description||"", "Thematique": themeById(it.theme).label,
+        "Mentor": it.mentorName||"", "Departement mentor": it.mentorDept||"", "Objectif": it.objective||"",
+        "Duree": it.duration||"", "Date souhaitee": it.desiredDate||"", "Statut": statusById(it.status).label
+      };
+    });
+  }
+
+  function toCsv(rows){
+    if(!rows.length) return "";
+    var headers = Object.keys(rows[0]);
+    var lines = [headers.join(";")];
+    rows.forEach(function(r){
+      lines.push(headers.map(function(h){
+        var v = String(r[h]==null?"":r[h]).replace(/"/g,'""');
+        return /[;"\n]/.test(v) ? '"'+v+'"' : v;
+      }).join(";"));
+    });
+    return lines.join("\n");
+  }
+
+  function offerDownload(filename, blob){
+    if(!state.downloads){ toast("Export indisponible", "Le téléchargement n'est pas disponible dans cette vue.", true); return; }
+    state.downloads.save({filename: filename, data: blob}).then(function(){
+      toast("Export prêt", filename);
+    }).catch(function(e){
+      if(e && e.code!=="declined"){ toast("Export impossible", (e && e.message) || "Réessayez.", true); }
+    });
+  }
+
+  function exportCsv(){
+    var csv = "﻿" + toCsv(exportRows());
+    offerDownload("camusat-talk-propositions.csv", new Blob([csv], {type:"text/csv;charset=utf-8"}));
+  }
+
+  function exportXlsx(){
+    if(window.XLSX){ buildAndSaveXlsx(); return; }
+    var s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js";
+    s.onload = buildAndSaveXlsx;
+    s.onerror = function(){ toast("Export Excel indisponible", "Utilisez l'export CSV.", true); };
+    document.head.appendChild(s);
+  }
+
+  function buildAndSaveXlsx(){
+    try{
+      var rows = exportRows();
+      var ws = window.XLSX.utils.json_to_sheet(rows);
+      var wb = window.XLSX.utils.book_new();
+      window.XLSX.utils.book_append_sheet(wb, ws, "Propositions");
+      var out = window.XLSX.write(wb, {bookType:"xlsx", type:"array"});
+      offerDownload("camusat-talk-propositions.xlsx", new Blob([out], {type:"application/octet-stream"}));
+    }catch(e){ toast("Export Excel impossible", e.message, true); }
+  }
+
+  /* ============================= BIND PER ROUTE ============================= */
+  function bindRouteEvents(route){
+    if(route==="proposer") bindProposerForm();
+    else if(route==="presentateurs") bindPresentateursEvents();
+    else if(route==="dashboard") bindDashboardEvents();
+  }
+
+  /* ============================= INIT ============================= */
+  try{ if(sessionStorage.getItem("ct_admin_ok")==="1") state.adminUnlocked = true; }catch(e){}
+  state.filters.dashTheme = "";
+  initDb();
+  render();
+})();
+</script>
